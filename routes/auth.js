@@ -8,11 +8,10 @@ const router = express.Router();
 
 // Register
 router.post('/register', [
-  body('name').trim().isLength({ min: 2 }).withMessage('Name must be at least 2 characters'),
-  body('username').trim().isLength({ min: 3 }).withMessage('Username must be at least 3 characters'),
+  body('firstName').trim(),
+  body('lastName').trim(),
   body('email').isEmail().withMessage('Please provide a valid email'),
   body('password').isLength({ min: 3 }).withMessage('Password must be at least 3 characters'),
-  body('phone').trim().notEmpty().withMessage('Phone number is required'),
   body('role').optional().isIn(['Admin', 'Staff', 'Manager', 'User']).withMessage('Invalid role')
 ], async (req, res) => {
   try {
@@ -25,19 +24,19 @@ router.post('/register', [
       });
     }
 
-    const { name, username, email, password, phone, role = 'User' } = req.body;
+    const { firstName, lastName, email, password, role = 'User' } = req.body;
 
     // Check if user already exists
     const existingUser = await User.findOne({
       where: {
-        $or: [{ email }, { username }]
+        $or: [{ email }, { firstName }]
       }
     });
 
     if (existingUser) {
       return res.status(400).json({
         success: false,
-        message: 'User with this email or username already exists'
+        message: 'User with this email or Name already exists'
       });
     }
 
@@ -92,11 +91,10 @@ router.post('/register', [
 
     // Create user
     const user = await User.create({
-      name,
-      username,
+      firstName,
+      lastName,
       email,
       password,
-      phone,
       role,
       permissions
     });
@@ -114,10 +112,9 @@ router.post('/register', [
       data: {
         user: {
           id: user.id,
-          name: user.name,
-          username: user.username,
+          firstName: user.firstName,
+          lastName: user.lastName,
           email: user.email,
-          phone: user.phone,
           role: user.role
         },
         token
@@ -187,10 +184,9 @@ router.post('/login', [
       data: {
         user: {
           id: user.id,
-          name: user.name,
-          username: user.username,
+          firstName: user.firstName,
+          lastName: user.lastName,
           email: user.email,
-          phone: user.phone,
           role: user.role,
           permissions: user.permissions
         },

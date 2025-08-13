@@ -14,7 +14,7 @@ router.get('/staff', auth, authorize('Admin'), async (req, res) => {
         is_active: true
       },
       attributes: { exclude: ['password'] },
-      order: [['created_at', 'DESC']]
+      order: [['createdAt', 'DESC']]
     });
 
     res.json({
@@ -32,11 +32,10 @@ router.get('/staff', auth, authorize('Admin'), async (req, res) => {
 
 // Create staff member (Admin only)
 router.post('/staff', auth, authorize('Admin'), [
-  body('name').trim().isLength({ min: 2 }).withMessage('Name must be at least 2 characters'),
-  body('username').trim().isLength({ min: 3 }).withMessage('Username must be at least 3 characters'),
+  body('firstName'),
+  body('lastName'),
   body('email').isEmail().withMessage('Please provide a valid email'),
   body('password').isLength({ min: 3 }).withMessage('Password must be at least 3 characters'),
-  body('phone').trim().notEmpty().withMessage('Phone number is required'),
   body('role').isIn(['Staff', 'Manager']).withMessage('Invalid role')
 ], async (req, res) => {
   try {
@@ -49,19 +48,17 @@ router.post('/staff', auth, authorize('Admin'), [
       });
     }
 
-    const { name, username, email, password, phone, role } = req.body;
+    const { firstName, lastName, email, password, role } = req.body;
 
     // Check if user already exists
     const existingUser = await User.findOne({
-      where: {
-        $or: [{ email }, { username }]
-      }
+      where: { email }
     });
 
     if (existingUser) {
       return res.status(400).json({
         success: false,
-        message: 'User with this email or username already exists'
+        message: 'User with this email already exists'
       });
     }
 
@@ -100,11 +97,10 @@ router.post('/staff', auth, authorize('Admin'), [
     }
 
     const user = await User.create({
-      name,
-      username,
+      firstName,
+      lastName,
       email,
       password,
-      phone,
       role,
       permissions
     });
@@ -115,10 +111,9 @@ router.post('/staff', auth, authorize('Admin'), [
       data: {
         user: {
           id: user.id,
-          name: user.name,
-          username: user.username,
+          firstName: user.firstName,
+          lastName: user.lastName,
           email: user.email,
-          phone: user.phone,
           role: user.role,
           permissions: user.permissions
         }
@@ -126,6 +121,76 @@ router.post('/staff', auth, authorize('Admin'), [
     });
   } catch (error) {
     console.error('Create staff error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+});
+
+// Update staff member (Admin only)
+router.put('/staff/:id', auth, authorize('Admin'), [
+  body('firstName'),
+  body('lastName'),
+  body('email').optional().isEmail().withMessage('Please provide a valid email'),
+  body('role').optional().isIn(['Staff', 'Manager']).withMessage('Invalid role')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const { id } = req.params;
+    const { firstName, lastName, email, role } = req.body;
+
+    const user = await User.findByPk(id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Check if email is being updated and if it already exists
+    if (email && email !== user.email) {
+      const existingUser = await User.findOne({ where: { email } });
+      if (existingUser) {
+        return res.status(400).json({
+          success: false,
+          message: 'Email already in use by another user'
+        });
+      }
+    }
+
+    // Prepare update data
+    const updateData = {};
+    if (firstName) updateData.firstName = firstName;
+    if (lastName) updateData.lastName = lastName;
+    if (email) updateData.email = email;
+    if (role) updateData.role = role;
+
+    await user.update(updateData);
+
+    res.json({
+      success: true,
+      message: 'Staff member updated successfully',
+      data: {
+        user: {
+          id: user.id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          role: user.role
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Update staff error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error'
@@ -159,7 +224,14 @@ router.put('/staff/:id/permissions', auth, authorize('Admin'), async (req, res) 
     res.json({
       success: true,
       message: 'Permissions updated successfully',
-      data: { user }
+      data: {
+        user: {
+          id: user.id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          permissions: user.permissions
+        }
+      }
     });
   } catch (error) {
     console.error('Update permissions error:', error);
@@ -194,10 +266,99 @@ router.delete('/staff/:id', auth, authorize('Admin'), async (req, res) => {
 
     res.json({
       success: true,
-      message: 'Staff member deleted successfully'
+      message: 'Staff member deactivated successfully'
     });
   } catch (error) {
     console.error('Delete staff error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+});
+
+// Get user profile (Authenticated users)
+router.get('/profile', auth, async (req, res) => {
+  try {
+    const user = await User.findByPk(req.user.id, {
+      attributes: { exclude: ['password'] }
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        user: {
+          id: user.id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          role: user.role,
+          permissions: user.permissions
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Get profile error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+});
+
+// Update user profile (Authenticated users)
+router.put('/profile', auth, [
+  body('firstName').optional().trim().isLength({ min: 2 }).withMessage('First name must be at least 2 characters'),
+  body('lastName').optional().trim().isLength({ min: 2 }).withMessage('Last name must be at least 2 characters'),
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const { firstName, lastName } = req.body;
+    const user = await User.findByPk(req.user.id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Prepare update data
+    const updateData = {};
+    if (firstName) updateData.firstName = firstName;
+    if (lastName) updateData.lastName = lastName;
+
+    await user.update(updateData);
+
+    res.json({
+      success: true,
+      message: 'Profile updated successfully',
+      data: {
+        user: {
+          id: user.id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Update profile error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error'
